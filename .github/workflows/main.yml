@@ -1,381 +1,54 @@
-name: 🔥 كواغد - النشر الآلي المتقدم
+name: 🏪 نشر سوق كواغد - Deploy to GitHub Pages
 
 on:
   push:
-    branches: [ main, master, 'feature/*' ]
-    paths:
-      - '**'
-      - '!**.md'
-      - '!.gitignore'
+    branches: [ main, master ]
   pull_request:
-    branches: [ main ]
-  schedule:
-    - cron: '0 */6 * * *'  # كل 6 ساعات
-    - cron: '0 0 * * 0'    # كل أحد
+    branches: [ main, master ]
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'بيئة النشر'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
-          - development
-      force_rebuild:
-        description: 'إعادة بناء كاملة'
-        required: false
-        default: false
-        type: boolean
 
 permissions:
-  contents: write
+  contents: read
   pages: write
   id-token: write
-  actions: read
-  deployments: write
-  statuses: write
-  checks: write
 
 concurrency:
-  group: "kawaghed-store-${{ github.ref }}"
-  cancel-in-progress: true
-
-env:
-  PYTHON_VERSION: '3.11'
-  NODE_VERSION: '20'
-  STORE_NAME: 'كواغد'
-  CLOUDINARY_CLOUD: 'dk9xej3cf'
-  CLOUDINARY_PRESET: 'k30_mk'
+  group: "pages"
+  cancel-in-progress: false
 
 jobs:
-  # ═══════════════════════════════════════════════
-  # المرحلة 1: التحقق والتحليل
-  # ═══════════════════════════════════════════════
-  validate:
-    name: 🔍 التحقق من الكود
+  build-and-deploy:
     runs-on: ubuntu-latest
-    outputs:
-      python_changed: ${{ steps.changes.outputs.python }}
-      config_valid: ${{ steps.validate.outputs.valid }}
     
     steps:
-    - name: 📥 جلب المستودع
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 0
-    
-    - name: 🔍 تحليل التغييرات
-      id: changes
-      uses: tj-actions/changed-files@v41
-      with:
-        files: |
-          **/*.py
-          **/*.json
-          **/*.yml
-          **/*.yaml
-    
-    - name: 🐍 إعداد Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: 📋 التحقق من صحة التكوين
-      id: validate
-      run: |
-        echo "🔍 التحقق من ملفات التكوين..."
-        
-        if [ -f config.json ]; then
-          python -c "
-import json, sys
-try:
-    with open('config.json', 'r') as f:
-        config = json.load(f)
-    required = ['cloudinary', 'security', 'store']
-    for key in required:
-        if key not in config:
-            print(f'❌ مفتاح مفقود: {key}')
-            sys.exit(1)
-    print('✅ التكوين صالح')
-    print('valid=true')
-except Exception as e:
-    print(f'❌ خطأ: {e}')
-    sys.exit(1)
-          "
-          echo "valid=true" >> $GITHUB_OUTPUT
-        else
-          echo "⚠️ ملف التكوين غير موجود"
-          echo "valid=false" >> $GITHUB_OUTPUT
-        fi
-    
-    - name: 🔒 فحص الأمان
-      run: |
-        echo "🔒 فحص أمان المتجر..."
-        python -c "
-import hashlib, json
-security_code = '1234'
-hash_obj = hashlib.sha256(security_code.encode()).hexdigest()
-print(f'🔐 تجزئة الأمان: {hash_obj[:16]}...')
-print('✅ فحص الأمان مكتمل')
-        "
+      - name: 📥 تحميل الكود
+        uses: actions/checkout@v4
 
-  # ═══════════════════════════════════════════════
-  # المرحلة 2: البناء والتوليد
-  # ═══════════════════════════════════════════════
-  build:
-    name: 🏗️ بناء متجر كواغد
-    needs: validate
-    runs-on: ubuntu-latest
-    if: |
-      always() &&
-      (needs.validate.result == 'success' || needs.validate.result == 'skipped')
-    
-    steps:
-    - name: 📥 جلب المستودع
-      uses: actions/checkout@v4
-    
-    - name: 🐍 إعداد Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-        cache: 'pip'
-    
-    - name: 📦 تثبيت المتطلبات
-      run: |
-        python -m pip install --upgrade pip
-        pip install Pillow requests cryptography
-        echo "✅ المتطلبات مثبتة"
-    
-    - name: 🚀 تشغيل مولد كواغد
-      run: |
-        echo "🔥 بدء توليد متجر كواغد..."
-        python scraper.py
-        echo "✅ تم توليد جميع الملفات"
-    
-    - name: 📋 التحقق من المخرجات
-      run: |
-        echo "📁 الملفات المولدة:"
-        echo "═══════════════════════════════"
-        
-        files_to_check=(
-          "index.html"
-          "assets/css/style.css"
-          "assets/js/app.js"
-          "config.json"
-          "manifest.json"
-          "sw.js"
-        )
-        
-        for file in "${files_to_check[@]}"; do
-          if [ -f "$file" ]; then
-            size=$(wc -c < "$file" | tr -d ' ')
-            echo "✅ $file (${size} bytes)"
-          else
-            echo "❌ $file مفقود!"
-            exit 1
-          fi
-        done
-        
-        echo "═══════════════════════════════"
-        echo "📊 إجمالي الملفات: $(find . -type f -not -path './.git/*' | wc -l)"
-    
-    - name: 🎨 تحسين الملفات
-      run: |
-        echo "🎨 جاري تحسين الملفات..."
-        
-        # ضغط CSS
-        if command -v npx &> /dev/null; then
-          npx clean-css-cli -o assets/css/style.min.css assets/css/style.css || true
-        fi
-        
-        # إنشاء نسخة محسنة
-        cp index.html index.original.html
-        
-        echo "✅ تم التحسين"
-    
-    - name: 📤 رفع المخرجات
-      uses: actions/upload-artifact@v4
-      with:
-        name: kawaghed-store-files
-        path: |
-          index.html
-          assets/
-          config.json
-          manifest.json
-          sw.js
-        retention-days: 30
+      - name: 🐍 تجهيز بايثون
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-  # ═══════════════════════════════════════════════
-  # المرحلة 3: النشر إلى GitHub Pages
-  # ═══════════════════════════════════════════════
-  deploy:
-    name: 🚀 نشر متجر كواغد
-    needs: build
-    runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
-    environment:
-      name: ${{ github.event.inputs.environment || 'production' }}
-      url: ${{ steps.deployment.outputs.page_url }}
-    
-    steps:
-    - name: 📥 تحميل المخرجات
-      uses: actions/download-artifact@v4
-      with:
-        name: kawaghed-store-files
-        path: ./public
-    
-    - name: 🎯 تجهيز مجلد النشر
-      run: |
-        echo "📁 تجهيز مجلد النشر..."
-        
-        mkdir -p public_final
-        cp -r public/* public_final/
-        
-        # إنشاء ملف 404 مخصص
-        cat > public_final/404.html << 'EOF'
-        <!DOCTYPE html>
-        <html lang="ar" dir="rtl">
-        <head>
-            <meta charset="UTF-8">
-            <meta http-equiv="refresh" content="3;url=/">
-            <title>كواغد - الصفحة غير موجودة</title>
-            <style>
-                body {
-                    background: #0a0a1a;
-                    color: white;
-                    font-family: 'Cairo', sans-serif;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    height: 100vh;
-                    margin: 0;
-                    text-align: center;
-                }
-                .error-container { animation: fadeIn 0.5s ease; }
-                @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } }
-            </style>
-        </head>
-        <body>
-            <div class="error-container">
-                <div style="font-size: 100px;">🔍</div>
-                <h1>404 - الصفحة غير موجودة</h1>
-                <p>جاري تحويلك إلى متجر كواغد...</p>
-            </div>
-        </body>
-        </html>
-        EOF
-        
-        echo "✅ مجلد النشر جاهز"
-    
-    - name: 📤 النشر إلى GitHub Pages
-      uses: peaceiris/actions-gh-pages@v3
-      with:
-        github_token: ${{ secrets.GITHUB_TOKEN }}
-        publish_dir: ./public_final
-        publish_branch: gh-pages
-        force_orphan: true
-        commit_message: |
-          🔥 نشر متجر كواغد - ${{ github.sha }}
-          
-          • البناء: ${{ github.run_id }}
-          • التاريخ: ${{ github.event.head_commit.timestamp }}
-          • المرسل: ${{ github.actor }}
-        user_name: 'كواغد بوت'
-        user_email: 'kawaghed@store.com'
-    
-    - name: 🎉 تأكيد النشر
-      id: deployment
-      run: |
-        REPO_NAME=$(echo ${{ github.repository }} | cut -d'/' -f2)
-        echo "page_url=https://${{ github.repository_owner }}.github.io/$REPO_NAME" >> $GITHUB_OUTPUT
-        
-        echo "🎉 متجر كواغد نُشر بنجاح!"
-        echo "🔗 الرابط: https://${{ github.repository_owner }}.github.io/$REPO_NAME"
+      - name: 🏗️ توليد ملفات الموقع
+        run: |
+          python main.py
+          echo "✅ تم إنشاء جميع ملفات سوق كواغد بنجاح"
 
-  # ═══════════════════════════════════════════════
-  # المرحلة 4: النسخ الاحتياطي
-  # ═══════════════════════════════════════════════
-  backup:
-    name: 💾 نسخ احتياطي
-    needs: deploy
-    runs-on: ubuntu-latest
-    if: always() && needs.deploy.result == 'success'
-    
-    steps:
-    - name: 📥 تحميل المخرجات
-      uses: actions/download-artifact@v4
-      with:
-        name: kawaghed-store-files
-        path: ./backup-source
-    
-    - name: 💾 إنشاء نسخة احتياطية
-      run: |
-        BACKUP_NAME="kawaghed-backup-$(date +%Y%m%d-%H%M%S)"
-        mkdir -p backups
-        
-        cd backup-source
-        tar -czf "../backups/${BACKUP_NAME}.tar.gz" .
-        cd ..
-        
-        echo "💾 نسخة احتياطية: ${BACKUP_NAME}.tar.gz"
-        echo "📊 الحجم: $(du -h backups/${BACKUP_NAME}.tar.gz | cut -f1)"
-    
-    - name: 📤 رفع النسخة الاحتياطية
-      uses: actions/upload-artifact@v4
-      with:
-        name: kawaghed-backup-${{ github.run_id }}
-        path: backups/
-        retention-days: 90
+      - name: 📋 تجهيز صفحات GitHub
+        uses: actions/configure-pages@v5
 
-  # ═══════════════════════════════════════════════
-  # المرحلة 5: الإشعارات والتقارير
-  # ═══════════════════════════════════════════════
-  notify:
-    name: 📊 تقارير وإشعارات
-    needs: [build, deploy, backup]
-    runs-on: ubuntu-latest
-    if: always()
-    
-    steps:
-    - name: 📊 إنشاء تقرير النشر
-      run: |
-        cat > deployment-report.md << 'EOF'
-        # 📊 تقرير نشر متجر كواغد
-        
-        **وقت النشر:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-        
-        ## 🏗️ حالة البناء
-        - **البناء:** ${{ needs.build.result }}
-        - **النشر:** ${{ needs.deploy.result }}
-        - **النسخ الاحتياطي:** ${{ needs.backup.result }}
-        
-        ## 🔧 معلومات تقنية
-        - **المستودع:** ${{ github.repository }}
-        - **الفرع:** ${{ github.ref_name }}
-        - **المرسل:** ${{ github.actor }}
-        - **رقم التشغيل:** ${{ github.run_id }}
-        
-        ## ☁️ السحابة
-        - **Cloudinary:** ${{ env.CLOUDINARY_CLOUD }}
-        - **Upload Preset:** ${{ env.CLOUDINARY_PRESET }}
-        
-        ---
-        **متجر كواغد** - حيث تلتقي الجودة بالأناقة ✨
-        EOF
-        
-        cat deployment-report.md
-    
-    - name: 📤 رفع التقرير
-      uses: actions/upload-artifact@v4
-      with:
-        name: kawaghed-report-${{ github.run_id }}
-        path: deployment-report.md
-    
-    - name: ✅ ملخص النشر
-      run: |
-        echo "╔══════════════════════════════════════════════════════╗"
-        echo "║          🎉 متجر كواغد نُشر بنجاح!                   ║"
-        echo "║          جميع المراحل اكتملت                         ║"
-        echo "╚══════════════════════════════════════════════════════╝"
+      - name: 📤 رفع الملفات
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: '.'
+
+      - name: 🚀 نشر الموقع
+        id: deployment
+        uses: actions/deploy-pages@v4
+
+      - name: 🔗 رابط الموقع
+        run: |
+          echo "========================================="
+          echo "🌟 تم نشر سوق كواغد بنجاح!"
+          echo "🔗 الرابط: ${{ steps.deployment.outputs.page_url }}"
+          echo "========================================="
