@@ -1,10 +1,8 @@
-name: 🏪 نشر سوق كواغد - Deploy to GitHub Pages
+name: 🏪 نشر سوق كواغد
 
 on:
   push:
-    branches: [ main, master ]
-  pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 permissions:
@@ -19,7 +17,6 @@ concurrency:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    
     steps:
       - name: 📥 تحميل الكود
         uses: actions/checkout@v4
@@ -32,9 +29,9 @@ jobs:
       - name: 🏗️ توليد ملفات الموقع
         run: |
           python main.py
-          echo "✅ تم إنشاء جميع ملفات سوق كواغد بنجاح"
+          echo "✅ تم إنشاء جميع ملفات سوق كواغد"
 
-      - name: 📋 تجهيز صفحات GitHub
+      - name: 📋 تجهيز GitHub Pages
         uses: actions/configure-pages@v5
 
       - name: 📤 رفع الملفات
